@@ -1,0 +1,8 @@
+linters: with_defaults(
+  line_length_linter(100),
+  object_name_linter(styles = "snake_case"),
+  indentation_linter(indent = 4),
+  spaces_left_parentheses_linter = NULL,
+  commented_code_linter = NULL
+)
+exclude: list("data/*", "inst/*", "tests/testthat/_snaps/*")
