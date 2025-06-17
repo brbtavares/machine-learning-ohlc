@@ -32,41 +32,43 @@ path_outputs <- "C:/Users/bruno/OneDrive/Documents/R/outputs/"
 
 ```{r message=FALSE}
 read_data <- function(file_path) {
-  df <- fread(file_path, dec = ",", sep = ";", header = TRUE)
-  
-  cat("Colunas detectadas no arquivo:\n")
-  print(names(df))
-  
-  # Remove linhas onde Data ou Hora sejam vazios
-  df <- df %>% filter(!is.na(Data), !is.na(Hora), Data != "", Hora != "")
-  
-  # Remove espaços em branco!
-  df$Data <- trimws(df$Data)
-  df$Hora <- trimws(df$Hora)
-  
-  # Agora cria Datetime
-  df <- df %>% mutate(
-    Datetime = as.POSIXct(paste(Data, Hora), format = "%Y.%m.%d %H:%M:%S", tz = "UTC")
-  )
-  
-  # Remove linhas com Datetime inválido
-  n_before <- nrow(df)
-  df <- df %>% filter(!is.na(Datetime))
-  n_after <- nrow(df)
-  
-  if (n_before != n_after) {
-    cat(sprintf("⚠️  %d linhas removidas por Datetime inválido!\n", n_before - n_after))
-  }
-  
-  # Remove linhas com NA, NaN ou Inf nos preços
-  df <- df %>% filter(
-    !is.na(Open) & !is.na(High) & !is.na(Low) & !is.na(Close),
-    !is.infinite(Open) & !is.infinite(High) & !is.infinite(Low) & !is.infinite(Close)
-  )
-  
-  df <- df %>% select(Datetime, Open, High, Low, Close) %>% arrange(Datetime)
-  
-  return(df)
+    df <- fread(file_path, dec = ",", sep = ";", header = TRUE)
+
+    cat("Colunas detectadas no arquivo:\n")
+    print(names(df))
+
+    # Remove linhas onde Data ou Hora sejam vazios
+    df <- df %>% filter(!is.na(Data), !is.na(Hora), Data != "", Hora != "")
+
+    # Remove espaços em branco!
+    df$Data <- trimws(df$Data)
+    df$Hora <- trimws(df$Hora)
+
+    # Agora cria Datetime
+    df <- df %>% mutate(
+        Datetime = as.POSIXct(paste(Data, Hora), format = "%Y.%m.%d %H:%M:%S", tz = "UTC")
+    )
+
+    # Remove linhas com Datetime inválido
+    n_before <- nrow(df)
+    df <- df %>% filter(!is.na(Datetime))
+    n_after <- nrow(df)
+
+    if (n_before != n_after) {
+        cat(sprintf("⚠️  %d linhas removidas por Datetime inválido!\n", n_before - n_after))
+    }
+
+    # Remove linhas com NA, NaN ou Inf nos preços
+    df <- df %>% filter(
+        !is.na(Open) & !is.na(High) & !is.na(Low) & !is.na(Close),
+        !is.infinite(Open) & !is.infinite(High) & !is.infinite(Low) & !is.infinite(Close)
+    )
+
+    df <- df %>%
+        select(Datetime, Open, High, Low, Close) %>%
+        arrange(Datetime)
+
+    return(df)
 }
 ```
 
@@ -75,143 +77,138 @@ read_data <- function(file_path) {
 ```{r message=FALSE}
 # Calcula volatilidade Yang-Zhang (simplificado para candles OHLC)
 calc_yang_zhang_vol <- function(ohlc, window = 14) {
-  open <- ohlc$Open
-  high <- ohlc$High
-  low  <- ohlc$Low
-  close <- ohlc$Close
-  
-  log_open_close <- log(open / close)
-  log_close_open <- log(close / open)
-  
-  rs <- (log(high/low))^2
-  
-  sigma_oc2 <- runMean(log_open_close^2, n = window)
-  sigma_co2 <- runMean(log_close_open^2, n = window)
-  sigma_rs2 <- runMean(rs, n = window)
-  
-  k <- 0.34 / (1.34 + (window+1)/(window-1))
-  vol_yz <- sqrt(sigma_oc2 + k * sigma_rs2 + (1-k) * sigma_co2)
-  
-  return(vol_yz)
+    open <- ohlc$Open
+    high <- ohlc$High
+    low <- ohlc$Low
+    close <- ohlc$Close
+
+    log_open_close <- log(open / close)
+    log_close_open <- log(close / open)
+
+    rs <- (log(high / low))^2
+
+    sigma_oc2 <- runMean(log_open_close^2, n = window)
+    sigma_co2 <- runMean(log_close_open^2, n = window)
+    sigma_rs2 <- runMean(rs, n = window)
+
+    k <- 0.34 / (1.34 + (window + 1) / (window - 1))
+    vol_yz <- sqrt(sigma_oc2 + k * sigma_rs2 + (1 - k) * sigma_co2)
+
+    return(vol_yz)
 }
 ```
 
 ```{r message=FALSE}
 prepare_features <- function(data, window_lstm = 10) {
-  data <- data %>% mutate(
-    
-    RET_1 = (Close / lag(Close) - 1),
-    RET_5 = (Close / lag(Close, 5) - 1),
-    RET_15 = (Close / lag(Close, 15) - 1),
-    
-    EMA_10 = EMA(Close, 10),
-    EMA_50 = EMA(Close, 50),
-    EMA_200 = EMA(Close, 200),
-    
-    RSI_5 = RSI(Close, 5),
-    RSI_10 = RSI(Close, 10),
-    RSI_15 = RSI(Close, 15),
-    
-    MACD_12_26 = MACD(xts::xts(Close, order.by=Datetime), 12, 26, 9)[,"macd"],
-    
-    YangZhangVol_5 = calc_yang_zhang_vol(data, 5),
-    YangZhangVol_15 = calc_yang_zhang_vol(data, 15),
-    
-    ATR_5 = ATR(HLC(data), 5),
-    ATR_15 = ATR(HLC(data), 15),
-    
-    
-  ) %>% na.omit()
-  
-  # Normaliza
-  data <- data %>% mutate(
-    across(c(ret_close, SMA_10, EMA_10, RSI_14, MACD_12_26, YangZhangVol), scale)
-  )
-  
-  # Labels
-  data <- data %>% mutate(
-    future_return = (lead(Close) / Close) - 1,
-    target = case_when(
-      future_return > 0.0002 ~ 1,
-      future_return < -0.0002 ~ -1,
-      TRUE ~ 0
-    )
-  ) %>% na.omit()
-  
-  feature_cols <- c("ret_close", "SMA_10", "EMA_10", "RSI_14", "MACD_12_26", "YangZhangVol")
-  
-  x_lstm <- array(0, dim = c(nrow(data)-window_lstm, window_lstm, length(feature_cols)))
-  y_lstm <- vector(mode = "integer", length = nrow(data)-window_lstm)
-  
-  for (i in 1:(nrow(data) - window_lstm)) {
-    window_rows <- i:(i + window_lstm - 1)
-    x_lstm[i,,] <- as.matrix(data[window_rows, ..feature_cols])
-    y_lstm[i] <- data$target[i + window_lstm]
-  }
-  
-  list(
-    full_data = data,
-    x_lstm = x_lstm,
-    y_lstm = y_lstm,
-    feature_matrix = as.matrix(data[, ..feature_cols]),
-    labels = data$target
-  )
-}
+    data <- data %>%
+        mutate(
+            RET_1 = (Close / lag(Close) - 1),
+            RET_5 = (Close / lag(Close, 5) - 1),
+            RET_15 = (Close / lag(Close, 15) - 1),
+            EMA_10 = EMA(Close, 10),
+            EMA_50 = EMA(Close, 50),
+            EMA_200 = EMA(Close, 200),
+            RSI_5 = RSI(Close, 5),
+            RSI_10 = RSI(Close, 10),
+            RSI_15 = RSI(Close, 15),
+            MACD_12_26 = MACD(xts::xts(Close, order.by = Datetime), 12, 26, 9)[, "macd"],
+            YangZhangVol_5 = calc_yang_zhang_vol(data, 5),
+            YangZhangVol_15 = calc_yang_zhang_vol(data, 15),
+            ATR_5 = ATR(HLC(data), 5),
+            ATR_15 = ATR(HLC(data), 15),
+        ) %>%
+        na.omit()
 
+    # Normaliza
+    data <- data %>% mutate(
+        across(c(ret_close, SMA_10, EMA_10, RSI_14, MACD_12_26, YangZhangVol), scale)
+    )
+
+    # Labels
+    data <- data %>%
+        mutate(
+            future_return = (lead(Close) / Close) - 1,
+            target = case_when(
+                future_return > 0.0002 ~ 1,
+                future_return < -0.0002 ~ -1,
+                TRUE ~ 0
+            )
+        ) %>%
+        na.omit()
+
+    feature_cols <- c("ret_close", "SMA_10", "EMA_10", "RSI_14", "MACD_12_26", "YangZhangVol")
+
+    x_lstm <- array(0, dim = c(nrow(data) - window_lstm, window_lstm, length(feature_cols)))
+    y_lstm <- vector(mode = "integer", length = nrow(data) - window_lstm)
+
+    for (i in 1:(nrow(data) - window_lstm)) {
+        window_rows <- i:(i + window_lstm - 1)
+        x_lstm[i, , ] <- as.matrix(data[window_rows, ..feature_cols])
+        y_lstm[i] <- data$target[i + window_lstm]
+    }
+
+    list(
+        full_data = data,
+        x_lstm = x_lstm,
+        y_lstm = y_lstm,
+        feature_matrix = as.matrix(data[, ..feature_cols]),
+        labels = data$target
+    )
+}
 ```
 
 # 02 - Funções de Modelagem
 
 ```{r message=FALSE}
 train_xgboost <- function(x_train, y_train, x_valid, y_valid, num_class = 3) {
-  dtrain <- xgb.DMatrix(data = x_train, label = y_train)
-  dvalid <- xgb.DMatrix(data = x_valid, label = y_valid)
+    dtrain <- xgb.DMatrix(data = x_train, label = y_train)
+    dvalid <- xgb.DMatrix(data = x_valid, label = y_valid)
 
-  class_weights <- c(`-1` = 0.45, `0` = 0.1, `1` = 0.45)
-  sample_weights <- sapply(prep$labels, function(lbl) class_weights[as.character(lbl)])
-  
-  model <- xgb.train(
-    data = dtrain,
-    watchlist = list(train=dtrain, valid=dvalid),
-    booster = "gbtree",
-    objective = "multi:softprob", # multi:softmax
-    num_class = 3,
-    eta = 0.1,
-    max_depth = 6,
-    eval_metric = "merror",
-    nrounds = 500,
-    early_stopping_rounds = 30,
-    verbose = 1,
-    subsample = 0.8,
-    colsample_bytree = 0.8,
-    weight = sample_weights
-  )
-  return(model)
+    class_weights <- c(`-1` = 0.45, `0` = 0.1, `1` = 0.45)
+    sample_weights <- sapply(prep$labels, function(lbl) class_weights[as.character(lbl)])
+
+    model <- xgb.train(
+        data = dtrain,
+        watchlist = list(train = dtrain, valid = dvalid),
+        booster = "gbtree",
+        objective = "multi:softprob", # multi:softmax
+        num_class = 3,
+        eta = 0.1,
+        max_depth = 6,
+        eval_metric = "merror",
+        nrounds = 500,
+        early_stopping_rounds = 30,
+        verbose = 1,
+        subsample = 0.8,
+        colsample_bytree = 0.8,
+        weight = sample_weights
+    )
+    return(model)
 }
 ```
 
 ```{r message=FALSE}
 # Treina um modelo CNN-LSTM
 train_cnn_lstm <- function(x_train, y_train, x_valid, y_valid, num_classes = 3) {
-  model <- keras_model_sequential() %>%
-    layer_conv_1d(filters = 32, kernel_size = 3, activation = 'relu', input_shape = dim(x_train)[2:3]) %>%
-    layer_lstm(units = 32) %>%
-    layer_dense(units = num_classes, activation = 'softmax')
+    model <- keras_model_sequential() %>%
+        layer_conv_1d(filters = 32, kernel_size = 3, activation = "relu", input_shape = dim(x_train)[2:3]) %>%
+        layer_lstm(units = 32) %>%
+        layer_dense(units = num_classes, activation = "softmax")
 
-  model %>% compile(
-    loss = 'sparse_categorical_crossentropy',
-    optimizer = optimizer_adam(learning_rate = 0.001),
-    metrics = 'accuracy'
-  )
+    model %>% compile(
+        loss = "sparse_categorical_crossentropy",
+        optimizer = optimizer_adam(learning_rate = 0.001),
+        metrics = "accuracy"
+    )
 
-  model %>% fit(
-    x = x_train, y = y_train,
-    validation_data = list(x_valid, y_valid),
-    epochs = 50, batch_size = 64,
-    callbacks = list(callback_early_stopping(patience=10))
-  )
+    model %>% fit(
+        x = x_train, y = y_train,
+        validation_data = list(x_valid, y_valid),
+        epochs = 50, batch_size = 64,
+        callbacks = list(callback_early_stopping(patience = 10))
+    )
 
-  return(model)
+    return(model)
 }
 ```
 
@@ -219,94 +216,93 @@ train_cnn_lstm <- function(x_train, y_train, x_valid, y_valid, num_classes = 3) 
 
 ```{r message=FALSE}
 export_xgboost_onnx <- function(model, feature_names, output_onnx_path, temp_bst_path = NULL) {
-  library(reticulate)
-  
-  use_virtualenv("r-venv-python310", required = TRUE)
-  
-  if (is.null(temp_bst_path)) {
-    temp_bst_path <- tempfile(fileext = ".bst")
-  }
-  
-  cat("🔵 Salvando modelo XGBoost em formato .bst...\n")
-  xgboost::xgb.save(model, temp_bst_path)
-  
-  cat("🔵 Carregando modelo .bst no Python...\n")
-  xgboost <- import("xgboost")
-  booster <- xgboost$Booster()
-  booster$load_model(temp_bst_path)
-  
-  cat("🔵 Importando onnxmltools...\n")
-  onnxmltools <- import("onnxmltools")
-  
-  input_shape <- tuple(NULL, as.integer(length(feature_names)))
-  
-  initial_type <- list(
-    list("input", onnxmltools$convert.common.data_types$FloatTensorType(shape = input_shape))
-  )
-  
-  cat("🔵 Convertendo modelo para ONNX...\n")
-  onnx_model <- onnxmltools$convert_xgboost(booster, initial_types = initial_type)
-  
-  cat("🔵 Salvando arquivo .onnx...\n")
-  onnx_bytes <- py_to_r(onnx_model$SerializeToString())
-  onnx_raw <- as.raw(onnx_bytes)
-  
-  file_conn <- file(output_onnx_path, "wb")
-  writeBin(onnx_raw, file_conn)
-  close(file_conn)
-  
-  cat("✅ Modelo ONNX exportado para:", output_onnx_path, "\n")
-}
+    library(reticulate)
 
+    use_virtualenv("r-venv-python310", required = TRUE)
+
+    if (is.null(temp_bst_path)) {
+        temp_bst_path <- tempfile(fileext = ".bst")
+    }
+
+    cat("🔵 Salvando modelo XGBoost em formato .bst...\n")
+    xgboost::xgb.save(model, temp_bst_path)
+
+    cat("🔵 Carregando modelo .bst no Python...\n")
+    xgboost <- import("xgboost")
+    booster <- xgboost$Booster()
+    booster$load_model(temp_bst_path)
+
+    cat("🔵 Importando onnxmltools...\n")
+    onnxmltools <- import("onnxmltools")
+
+    input_shape <- tuple(NULL, as.integer(length(feature_names)))
+
+    initial_type <- list(
+        list("input", onnxmltools$convert.common.data_types$FloatTensorType(shape = input_shape))
+    )
+
+    cat("🔵 Convertendo modelo para ONNX...\n")
+    onnx_model <- onnxmltools$convert_xgboost(booster, initial_types = initial_type)
+
+    cat("🔵 Salvando arquivo .onnx...\n")
+    onnx_bytes <- py_to_r(onnx_model$SerializeToString())
+    onnx_raw <- as.raw(onnx_bytes)
+
+    file_conn <- file(output_onnx_path, "wb")
+    writeBin(onnx_raw, file_conn)
+    close(file_conn)
+
+    cat("✅ Modelo ONNX exportado para:", output_onnx_path, "\n")
+}
 ```
 
 ```{r message=FALSE}
 # Exporta modelo Keras para ONNX
 export_keras_onnx <- function(model, filename) {
-  keras2onnx <- import("keras2onnx")
-  onnx_model <- keras2onnx$convert_keras(model, model$name)
-  keras2onnx$save_model(onnx_model, filename)
+    keras2onnx <- import("keras2onnx")
+    onnx_model <- keras2onnx$convert_keras(model, model$name)
+    keras2onnx$save_model(onnx_model, filename)
 }
 ```
 
 ```{r}
 validate_onnx_model <- function(onnx_path) {
-  library(reticulate)
-  
-  use_virtualenv("r-venv-python310", required = TRUE)
-  
-  onnxruntime <- import("onnxruntime")
-  
-  cat("🔵 Carregando modelo ONNX...\n")
-  sess <- onnxruntime$InferenceSession(onnx_path)
-  
-  cat("✅ Modelo ONNX carregado com sucesso! Sessão pronta.\n")
-  
-  return(sess)
+    library(reticulate)
+
+    use_virtualenv("r-venv-python310", required = TRUE)
+
+    onnxruntime <- import("onnxruntime")
+
+    cat("🔵 Carregando modelo ONNX...\n")
+    sess <- onnxruntime$InferenceSession(onnx_path)
+
+    cat("✅ Modelo ONNX carregado com sucesso! Sessão pronta.\n")
+
+    return(sess)
 }
 ```
 
 ```{r}
 predict_onnx <- function(sess_path, input_matrix) {
-  # 1. Garante que é matriz e 6 colunas
-  if (is.vector(input_matrix)) {
-    input_matrix <- matrix(input_matrix, nrow = 1)
-  }
-  if (ncol(input_matrix) != 6) {
-    stop("input_matrix deve ter exatamente 6 colunas")
-  }
-  
-  # 2. Cria arquivo JSON temporário
-  temp_json <- tempfile(fileext = ".json")
-  input_json <- toJSON(unname(as.data.frame(input_matrix)), auto_unbox = TRUE)
-  write(input_json, temp_json)
-  
-  # 3. Passa o caminho do JSON para o Python
-  py$temp_json <- temp_json
-  py$sess_path <- sess_path
-  
-  # 4. Executa inferência no Python
-  py_run_string("
+    # 1. Garante que é matriz e 6 colunas
+    if (is.vector(input_matrix)) {
+        input_matrix <- matrix(input_matrix, nrow = 1)
+    }
+    if (ncol(input_matrix) != 6) {
+        stop("input_matrix deve ter exatamente 6 colunas")
+    }
+
+    # 2. Cria arquivo JSON temporário
+    temp_json <- tempfile(fileext = ".json")
+    input_json <- toJSON(unname(as.data.frame(input_matrix)), auto_unbox = TRUE)
+    write(input_json, temp_json)
+
+    # 3. Passa o caminho do JSON para o Python
+    py$temp_json <- temp_json
+    py$sess_path <- sess_path
+
+    # 4. Executa inferência no Python
+    py_run_string("
 import json
 import numpy as np
 import onnxruntime as ort
@@ -333,16 +329,15 @@ output = sess.run(None, {input_name: input_np})
 
 resultado = output
 ")
-  
-  # 5. Recupera o resultado
-  output <- py$resultado
-  
-  # 6. Apaga o arquivo JSON temporário
-  unlink(temp_json)
-  
-  return(output)
-}
 
+    # 5. Recupera o resultado
+    output <- py$resultado
+
+    # 6. Apaga o arquivo JSON temporário
+    unlink(temp_json)
+
+    return(output)
+}
 ```
 
 04 - Treinamento
@@ -364,59 +359,58 @@ train_idx <- 1:floor(0.6 * n)
 valid_idx <- (floor(0.6 * n) + 1):(floor(0.8 * n))
 test_idx <- (floor(0.8 * n) + 1):n
 
-  x_train <- prep$feature_matrix[train_idx,]
-  y_train <- prep$labels[train_idx]
-  x_valid <- prep$feature_matrix[valid_idx,]
-  y_valid <- prep$labels[valid_idx]
+x_train <- prep$feature_matrix[train_idx, ]
+y_train <- prep$labels[train_idx]
+x_valid <- prep$feature_matrix[valid_idx, ]
+y_valid <- prep$labels[valid_idx]
 ```
 
 ```{r message=FALSE}
-  # Treina XGBoost
-x_train <- prep$feature_matrix[train_idx,]
-  y_train <- prep$labels[train_idx]
-  x_valid <- prep$feature_matrix[valid_idx,]
-  y_valid <- prep$labels[valid_idx]
-  # Ajusta labels para XGBoost
-  y_train <- y_train + 1
-  y_valid <- y_valid + 1
-  cat("Treinando modelo XGBoost...\n")
-  model <- train_xgboost(x_train, y_train, x_valid, y_valid)
+# Treina XGBoost
+x_train <- prep$feature_matrix[train_idx, ]
+y_train <- prep$labels[train_idx]
+x_valid <- prep$feature_matrix[valid_idx, ]
+y_valid <- prep$labels[valid_idx]
+# Ajusta labels para XGBoost
+y_train <- y_train + 1
+y_valid <- y_valid + 1
+cat("Treinando modelo XGBoost...\n")
+model <- train_xgboost(x_train, y_train, x_valid, y_valid)
 ```
 
 ```{r message=FALSE}
-  # Exporta para ONNX
+# Exporta para ONNX
 export_xgboost_onnx(
-  model = model, 
-  feature_names = colnames(prep$feature_matrix), 
-  output_onnx_path = paste0(path_models, "xgboost.onnx")
+    model = model,
+    feature_names = colnames(prep$feature_matrix),
+    output_onnx_path = paste0(path_models, "xgboost.onnx")
 )
 ```
 
 ```{r}
-sess <- validate_onnx_model(paste0(path_models,"xgboost.onnx"))
+sess <- validate_onnx_model(paste0(path_models, "xgboost.onnx"))
 ```
 
 ```{r}
 # Exemplo com primeiro registro
 input_matrix <- prep$feature_matrix[1, , drop = FALSE]
-predict_onnx(sess_path = paste0(path_models,"xgboost.onnx"),input_matrix)
+predict_onnx(sess_path = paste0(path_models, "xgboost.onnx"), input_matrix)
 ```
 
 ```{r message=FALSE}
 # Treina CNN-LSTM
-x_train <- prep$x_lstm[train_idx,,]
-  y_train <- prep$y_lstm[train_idx]
-  x_valid <- prep$x_lstm[valid_idx,,]
-  y_valid <- prep$y_lstm[valid_idx]
-  cat("Treinando modelo CNN-LSTM...\n")
-  model <- train_cnn_lstm(x_train, y_train, x_valid, y_valid)
+x_train <- prep$x_lstm[train_idx, , ]
+y_train <- prep$y_lstm[train_idx]
+x_valid <- prep$x_lstm[valid_idx, , ]
+y_valid <- prep$y_lstm[valid_idx]
+cat("Treinando modelo CNN-LSTM...\n")
+model <- train_cnn_lstm(x_train, y_train, x_valid, y_valid)
 ```
 
 ```{r message=FALSE}
-  # Exporta para ONNX
-  cat("Exportando para ONNX...\n")
-  export_keras_onnx(model, paste0(path_models, "model_cnn_lstm.onnx"))
-
+# Exporta para ONNX
+cat("Exportando para ONNX...\n")
+export_keras_onnx(model, paste0(path_models, "model_cnn_lstm.onnx"))
 ```
 
 # FIM

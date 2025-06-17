@@ -1,8 +1,8 @@
 #' @title Lista de Pacotes Necessários
 #' @description Um vetor contendo os nomes dos pacotes necessários para o script.
 required_packages <- c(
-  "data.table", "dplyr", "quantmod", "TTR", "keras", "tensorflow",
-  "xgboost", "yardstick", "recipes", "reticulate", "jsonlite"
+    "data.table", "dplyr", "quantmod", "TTR", "keras", "tensorflow",
+    "xgboost", "yardstick", "recipes", "reticulate", "jsonlite"
 )
 
 #' @title Variáveis Globais
