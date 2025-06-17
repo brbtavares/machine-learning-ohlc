@@ -75,5 +75,3 @@ If you're interested, feel free to fork the repo, open an issue, or submit a pul
 ---
 
 **Disclaimer**: This project is for research and educational purposes. It is not intended for live trading or investment advice.
-
----
