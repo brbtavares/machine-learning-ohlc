@@ -1,5 +1,5 @@
 lint:
-	Rscript -e 'lintr::lint_package()'
+	Rscript -e 'lintr::lint_dir()'
 
 style:
-	Rscript -e 'styler::style_pkg(indent_by = 4)'
+	Rscript -e 'styler::style_dir(indent_by = 4)'
