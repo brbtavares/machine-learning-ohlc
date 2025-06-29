@@ -1,0 +1,28 @@
+{
+    "r.linting": true,
+    "r.linting.lintr.enabled": true,
+    "r.linting.lintr.cache": false,
+    "r.formatting.autoFormat": true,
+    "r.formatting.style": "styler",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": "explicit"
+    },
+    "files.associations": {
+        "*.R": "r",
+        "*.r": "r",
+        "*.Rmd": "rmd"
+    },
+    "[r]": {
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "editor.rulers": [120]
+    },
+    "[rmd]": {
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "editor.rulers": [120]
+    }
+}
