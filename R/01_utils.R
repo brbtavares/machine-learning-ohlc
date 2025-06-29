@@ -107,31 +107,3 @@ prepare_features <- function(data, window_lstm = 10) {
         labels = data$target
     )
 }
-
-#' @title Leitura de Dados OHLC
-#' @param file_path Caminho para o arquivo CSV contendo os dados.
-#' @return Dataframe com colunas Datetime, Open, High, Low e Close.
-read_data <- function(file_path) {
-    df <- fread(file_path, dec = ",", sep = ";", header = TRUE)
-
-    cat("Colunas detectadas no arquivo:\n")
-    print(names(df))
-
-    # Limpeza e processamento de dados
-    df <- df %>%
-        filter(!is.na(Data), !is.na(Hora), Data != "", Hora != "") %>%
-        mutate(
-            Data = trimws(Data),
-            Hora = trimws(Hora),
-            Datetime = as.POSIXct(paste(Data, Hora), format = "%Y.%m.%d %H:%M:%S", tz = "UTC")
-        ) %>%
-        filter(!is.na(Datetime)) %>%
-        filter(
-            !is.na(Open) & !is.na(High) & !is.na(Low) & !is.na(Close),
-            !is.infinite(Open) & !is.infinite(High) & !is.infinite(Low) & !is.infinite(Close)
-        ) %>%
-        select(Datetime, Open, High, Low, Close) %>%
-        arrange(Datetime)
-
-    return(df)
-}
