@@ -1,5 +1,12 @@
+# Linting targets
 lint:
-	Rscript -e 'lintr::lint_dir(linters = lintr::with_defaults(line_length_linter(100), object_name_linter(styles = "snake_case"), indentation_linter(indent = 4)))'
+	Rscript scripts/run_lint.R
+
+lint-check:
+	Rscript -e 'lintr::lint_package()'
 
 style:
-	Rscript -e 'styler::style_dir(indent_by = 4)'
+	Rscript -e 'styler::style_pkg(indent_by = 4)'
+
+# Executa linting completo (style + check)
+lint-all: style lint-check
